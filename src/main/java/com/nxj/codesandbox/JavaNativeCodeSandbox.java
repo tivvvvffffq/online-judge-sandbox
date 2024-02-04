@@ -39,11 +39,12 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
         JavaNativeCodeSandbox javaNativeCodeSandbox = new JavaNativeCodeSandbox();
         ExecuteCodeRequest executeCodeRequest = new ExecuteCodeRequest();
         executeCodeRequest.setInputList(Arrays.asList("1 2", "1 3"));
-        // 通过args读取参数
+        // 执行通过args读取参数的进程
 //        String code = ResourceUtil.readStr("testCode/simpleComputeArgs/Main.java", StandardCharsets.UTF_8);
-        // 通过scanner读取参数
-        String code = ResourceUtil.readStr("testCode/simpleCompute/Main.java", StandardCharsets.UTF_8);
-
+        // 执行通过scanner交互式读取参数的进程
+//        String code = ResourceUtil.readStr("testCode/simpleCompute/Main.java", StandardCharsets.UTF_8);
+        // 测试不安全的代码
+        String code = ResourceUtil.readStr("testCode/unsafeCode/ReadFileError.java", StandardCharsets.UTF_8);
         executeCodeRequest.setCode(code);
         executeCodeRequest.setLanguage("java");
         ExecuteCodeResponse executeCodeResponse = javaNativeCodeSandbox.executeCode(executeCodeRequest);
