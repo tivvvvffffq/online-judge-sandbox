@@ -35,6 +35,12 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
     // 字典树
     private static final WordTree WORD_TREE;
 
+    // 安全管理器路径
+    private static final String SECURITY_MANAGER_PATH = "/Users/tivvvv/IdeaProjects/online-judge-sandbox/src/main/resources/security";
+
+    // 安全管理器名
+    private static final String SECURITY_MANAGER_CLASS_NAME = "MySecurityManager";
+
     static {
         // 初始化字典树
         WORD_TREE = new WordTree();
@@ -45,12 +51,14 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
         JavaNativeCodeSandbox javaNativeCodeSandbox = new JavaNativeCodeSandbox();
         ExecuteCodeRequest executeCodeRequest = new ExecuteCodeRequest();
         executeCodeRequest.setInputList(Arrays.asList("1 2", "1 3"));
+
         // 执行通过args读取参数的进程
 //        String code = ResourceUtil.readStr("testCode/simpleComputeArgs/Main.java", StandardCharsets.UTF_8);
         // 执行通过scanner交互式读取参数的进程
 //        String code = ResourceUtil.readStr("testCode/simpleCompute/Main.java", StandardCharsets.UTF_8);
         // 测试不安全的代码
         String code = ResourceUtil.readStr("testCode/unsafeCode/ReadFileError.java", StandardCharsets.UTF_8);
+
         executeCodeRequest.setCode(code);
         executeCodeRequest.setLanguage("java");
         ExecuteCodeResponse executeCodeResponse = javaNativeCodeSandbox.executeCode(executeCodeRequest);
@@ -65,11 +73,11 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
 
         // 3). 代码黑名单限制
         //  校验代码中是否包含黑名单中的命令
-        FoundWord foundWord = WORD_TREE.matchWord(code);
-        if (foundWord != null) {
-            System.out.println("包含禁止词：" + foundWord.getFoundWord());
-            return null;
-        }
+//        FoundWord foundWord = WORD_TREE.matchWord(code);
+//        if (foundWord != null) {
+//            System.out.println("包含禁止词：" + foundWord.getFoundWord());
+//            return null;
+//        }
 
 //        1. 把用户的代码保存为文件
         String userDir = System.getProperty("user.dir");
@@ -99,7 +107,10 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
         for (String inputArgs : inputList) {
             // 2). 资源分配限制
             // -Xmx256m 限制程序运行最大堆空间大小为256m(系统实际占用的最大资源会比256m更大于一点)
-            String runCmd = String.format("java -Xmx256m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, inputArgs);
+            // 4). 启动安全管理器
+//            String runCmd = String.format("java -Xmx256m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, inputArgs);
+            String runCmd = String.format("java -Xmx256m -Dfile.encoding=UTF-8 -cp %s:%s -Djava.security.manager=%s Main %s", userCodeParentPath, SECURITY_MANAGER_PATH, SECURITY_MANAGER_CLASS_NAME, inputArgs);
+
             try {
                 Process runProcess = Runtime.getRuntime().exec(runCmd);
                 // 1). 超时控制
@@ -120,6 +131,7 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
                 ExecuteMessage executeMessage = ProcessUtils.runProcessAndGetMessage(runProcess, "运行");
                 // 运行交互式
 //                ExecuteMessage executeMessage = ProcessUtils.runInteractProcessAndGetMessage(runProcess, inputArgs);
+
                 System.out.println(executeMessage);
                 executeMessageList.add(executeMessage);
             } catch (Exception e) {
@@ -159,10 +171,10 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
         executeCodeResponse.setJudgeInfo(judgeInfo);
 
 //        5. 文件清理
-        if (userCodeFile.getParentFile() != null) {
-            boolean del = FileUtil.del(userCodeParentPath);
-            System.out.println("删除" + (del ? "成功" : "失败"));
-        }
+//        if (userCodeFile.getParentFile() != null) {
+//            boolean del = FileUtil.del(userCodeParentPath);
+//            System.out.println("删除" + (del ? "成功" : "失败"));
+//        }
         return executeCodeResponse;
     }
 
