@@ -1,5 +1,7 @@
 package com.nxj.codesandbox.security;
 
+import java.io.File;
+import java.io.IOException;
 import java.security.Permission;
 
 public class MySecurityManager extends SecurityManager {
@@ -18,9 +20,31 @@ public class MySecurityManager extends SecurityManager {
     // 检测程序是否允许读文件
     @Override
     public void checkRead(String file) {
+        // 允许读取JVM内部资源
+        if (file.startsWith("/Users/tivvvv/Library/Java/JavaVirtualMachines")) {
+            return;
+        }
+        // 允许读取的安全目录，应调整为实际用于存放提交代码和必要资源的目录
+        String allowedDirectory = "/Users/tivvvv/IdeaProjects/online-judge-sandbox/code/";
+
+        // 确保请求的文件路径确实位于允许的目录下
+        try {
+            // 获取规范路径，以处理相对路径等情况
+            String canonicalPath = new File(file).getCanonicalPath();
+            System.out.println(canonicalPath);
+            if (canonicalPath.startsWith(allowedDirectory)) {
+                return;
+            }
+        } catch (IOException e) {
+            // 处理获取规范路径时可能发生的异常
+            throw new SecurityException("检查文件访问时出错：" + file, e);
+        }
+
+        // 对于所有其他路径，抛出安全异常
         System.out.println(file);
         throw new SecurityException("checkRead 权限异常：" + file);
     }
+
 
     // 检测程序是否允许写文件
     @Override
