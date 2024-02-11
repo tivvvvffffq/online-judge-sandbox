@@ -1,11 +1,21 @@
-package com.nxj.codesandbox;
-
+package com.nxj.codesandbox.docker;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.io.resource.ResourceUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.dfa.FoundWord;
 import cn.hutool.dfa.WordTree;
+import com.github.dockerjava.api.DockerClient;
+import com.github.dockerjava.api.command.CreateContainerCmd;
+import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.command.PullImageCmd;
+import com.github.dockerjava.api.command.PullImageResultCallback;
+import com.github.dockerjava.api.model.Bind;
+import com.github.dockerjava.api.model.HostConfig;
+import com.github.dockerjava.api.model.PullResponseItem;
+import com.github.dockerjava.api.model.Volume;
+import com.github.dockerjava.core.DockerClientBuilder;
+import com.nxj.codesandbox.CodeSandbox;
 import com.nxj.codesandbox.model.ExecuteCodeRequest;
 import com.nxj.codesandbox.model.ExecuteCodeResponse;
 import com.nxj.codesandbox.model.ExecuteMessage;
@@ -19,7 +29,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
-public class JavaNativeCodeSandbox implements CodeSandbox {
+public class JavaDockerCodeSandbox implements CodeSandbox {
 
     // 存放代码文件的文件夹
     private static final String GLOBAL_CODE_DIR_NAME = "code";
@@ -42,6 +52,8 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
     // 安全管理器名
     private static final String SECURITY_MANAGER_CLASS_NAME = "MySecurityManager";
 
+    private static final Boolean FIRST_INIT = true;
+
     static {
         // 初始化字典树
         WORD_TREE = new WordTree();
@@ -49,7 +61,7 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
     }
 
     public static void main(String[] args) {
-        JavaNativeCodeSandbox javaNativeCodeSandbox = new JavaNativeCodeSandbox();
+        JavaDockerCodeSandbox javaNativeCodeSandbox = new JavaDockerCodeSandbox();
         ExecuteCodeRequest executeCodeRequest = new ExecuteCodeRequest();
         executeCodeRequest.setInputList(Arrays.asList("1 2", "1 3"));
 
@@ -103,80 +115,57 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
             return getErrorResponse(e);
         }
 
-//        3. 执行代码，得到输出结果
-        List<ExecuteMessage> executeMessageList = new ArrayList<>();
-        for (String inputArgs : inputList) {
+        // 3. 创建容器，把文件复制到容器内
+        // 获取默认的 Docker Client
+        DockerClient dockerClient = DockerClientBuilder.getInstance().build();
 
-            // 2). 资源分配限制
-            // -Xmx256m 限制程序运行最大堆空间大小为256m(系统实际占用的最大资源会比256m更大于一点)
-//            String runCmd = String.format("java -Xmx256m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, inputArgs);
-            // 4). 启动安全管理器
-            String runCmd = String.format("java -Xmx256m -Dfile.encoding=UTF-8 -cp %s:%s -Djava.security.manager=%s Main %s", userCodeParentPath, SECURITY_MANAGER_PATH, SECURITY_MANAGER_CLASS_NAME, inputArgs);
-
+        // 拉取镜像
+        String image = "openjdk:8-alpine";
+        if (FIRST_INIT) {
+            PullImageCmd pullImageCmd = dockerClient.pullImageCmd(image);
+            PullImageResultCallback pullImageResultCallback = new PullImageResultCallback() {
+                @Override
+                public void onNext(PullResponseItem item) {
+                    System.out.println("下载镜像：" + item.getStatus());
+                    super.onNext(item);
+                }
+            };
             try {
-                Process runProcess = Runtime.getRuntime().exec(runCmd);
-                // 1). 超时控制
-                // 新建一个守护线程用于控制程序执行时间
-                new Thread(() -> {
-                    try {
-                        Thread.sleep(TIME_OUT);
-                        if (runProcess.isAlive()) {
-                            System.out.println("超时了，中断");
-                            runProcess.destroy();
-                        }
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
-                }).start();
-
-                // 运行args
-                ExecuteMessage executeMessage = ProcessUtils.runProcessAndGetMessage(runProcess, "运行");
-                // 运行交互式
-//                ExecuteMessage executeMessage = ProcessUtils.runInteractProcessAndGetMessage(runProcess, inputArgs);
-
-                System.out.println(executeMessage);
-                executeMessageList.add(executeMessage);
-            } catch (Exception e) {
-                return getErrorResponse(e);
+                pullImageCmd
+                        .exec(pullImageResultCallback)
+                        .awaitCompletion();
+            } catch (InterruptedException e) {
+                System.out.println("拉取镜像异常");
+                throw new RuntimeException(e);
             }
         }
 
-//        4. 收集整理输出结果
+        System.out.println("镜像拉取完成");
+
+        // 创建容器
+        CreateContainerCmd containerCmd = dockerClient.createContainerCmd(image);
+        HostConfig hostConfig = new HostConfig();
+        hostConfig.withMemory(100 * 1000 * 1000L);
+        hostConfig.withMemorySwap(0L);
+        hostConfig.withCpuCount(1L);
+        hostConfig.withSecurityOpts(Arrays.asList("seccomp=安全管理配置字符串"));
+        hostConfig.setBinds(new Bind(userCodeParentPath, new Volume("/app")));
+        CreateContainerResponse createContainerResponse = containerCmd
+                .withHostConfig(hostConfig)
+                .withNetworkDisabled(true)
+                .withReadonlyRootfs(true)
+                .withAttachStdin(true)
+                .withAttachStderr(true)
+                .withAttachStdout(true)
+                .withTty(true)
+                .exec();
+        System.out.println(createContainerResponse);
+        String containerId = createContainerResponse.getId();
+
+        // 启动容器
+        dockerClient.startContainerCmd(containerId).exec();
+
         ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
-        List<String> outputList = new ArrayList<>();
-        // 取用时最大值，便于判断是否超时
-        long maxTime = 0;
-        for (ExecuteMessage executeMessage : executeMessageList) {
-            String errorMessage = executeMessage.getErrorMessage();
-            if (StrUtil.isNotBlank(errorMessage)) {
-                executeCodeResponse.setMessage(errorMessage);
-                // 用户提交的代码执行中存在错误
-                executeCodeResponse.setStatus(3);
-                break;
-            }
-            outputList.add(executeMessage.getMessage());
-            Long time = executeMessage.getTime();
-            if (time != null) {
-                maxTime = Math.max(maxTime, time);
-            }
-        }
-        // 正常运行完成
-        if (outputList.size() == executeMessageList.size()) {
-            executeCodeResponse.setStatus(1);
-        }
-        executeCodeResponse.setOutputList(outputList);
-        JudgeInfo judgeInfo = new JudgeInfo();
-        judgeInfo.setTime(maxTime);
-        // 要借助第三方库来获取内存占用，非常麻烦，此处不做实现
-//        judgeInfo.setMemory();
-
-        executeCodeResponse.setJudgeInfo(judgeInfo);
-
-//        5. 文件清理
-        if (userCodeFile.getParentFile() != null) {
-            boolean del = FileUtil.del(userCodeParentPath);
-            System.out.println("删除" + (del ? "成功" : "失败"));
-        }
         return executeCodeResponse;
     }
 
