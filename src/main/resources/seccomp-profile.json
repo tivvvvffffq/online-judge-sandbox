@@ -1,0 +1,25 @@
+{
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "syscalls": [
+    {
+      "names": [
+        "mount",
+        "reboot",
+        "kexec_load",
+        "kexec_file_load",
+        "delete_module",
+        "init_module",
+        "finit_module",
+        "swapoff",
+        "swapon",
+        "syslog",
+        "sethostname",
+        "setdomainname",
+        "iopl",
+        "ioperm"
+      ],
+      "action": "SCMP_ACT_ERRNO"
+    }
+  ]
+}
+
